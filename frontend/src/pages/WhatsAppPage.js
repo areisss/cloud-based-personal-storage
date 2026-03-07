@@ -46,7 +46,10 @@ function WhatsAppPage() {
     }
   }
 
-  // Fetch on first load with no filters
+  // Fetch on first load with no filters.
+  // fetchMessages is intentionally omitted from deps — subsequent calls are
+  // triggered by the Search button, not by filter state changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchMessages(); }, []);
 
   return (
