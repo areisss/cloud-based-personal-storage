@@ -1,4 +1,5 @@
 import { render } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import HomePage, { getPrefix } from './HomePage';
 
 // Mock uploadData so file selection doesn't attempt real S3 uploads.
@@ -31,6 +32,6 @@ describe('getPrefix', () => {
 });
 
 test('renders a file upload input', () => {
-  const { container } = render(<HomePage />);
+  const { container } = render(<MemoryRouter><HomePage /></MemoryRouter>);
   expect(container.querySelector('input[type="file"]')).toBeInTheDocument();
 });
