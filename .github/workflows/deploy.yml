@@ -22,8 +22,12 @@ jobs:
       #    Amplify CLI generates this file locally but it's gitignored.
       #    The secret holds the entire file content; we write it back at
       #    build time so the React app can connect to Cognito and S3.
+      #    The secret is passed as an env var (not inline) so bash never
+      #    interprets special characters in the value.
       - name: Inject aws-exports.js
-        run: echo "${{ secrets.AWS_EXPORTS_CONTENT }}" > frontend/src/aws-exports.js
+        env:
+          AWS_EXPORTS_CONTENT: ${{ secrets.AWS_EXPORTS_CONTENT }}
+        run: printf '%s' "$AWS_EXPORTS_CONTENT" > frontend/src/aws-exports.js
 
       # 3. Inject API URLs as environment variables.
       #    Create React App picks up REACT_APP_* vars at build time
