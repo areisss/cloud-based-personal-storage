@@ -1,0 +1,68 @@
+name: Deploy Frontend
+
+# Triggers on any push to main that touches the frontend folder,
+# or manually via the GitHub Actions UI.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repo so we have the source code.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Inject aws-exports.js from the GitHub secret.
+      #    Amplify CLI generates this file locally but it's gitignored.
+      #    The secret holds the entire file content; we write it back at
+      #    build time so the React app can connect to Cognito and S3.
+      - name: Inject aws-exports.js
+        run: echo "${{ secrets.AWS_EXPORTS_CONTENT }}" > frontend/src/aws-exports.js
+
+      # 3. Inject API URLs as environment variables.
+      #    Create React App picks up REACT_APP_* vars at build time
+      #    and bakes them into the bundle — there's no runtime config.
+      - name: Inject .env
+        run: |
+          echo "REACT_APP_PHOTOS_API_URL=${{ secrets.PHOTOS_API_URL }}" >> frontend/.env
+          echo "REACT_APP_CHATS_API_URL=${{ secrets.CHATS_API_URL }}"  >> frontend/.env
+
+      # 4. Install dependencies.
+      #    --legacy-peer-deps is required because aws-amplify has peer dep
+      #    conflicts with React 19. The project-level .npmrc overrides the
+      #    corporate registry (if any) to point at registry.npmjs.org.
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
+
+      # 5. Build the production bundle.
+      #    CI=true turns warnings into errors so we catch issues early.
+      #    Output goes to frontend/build/.
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+        env:
+          CI: true
+
+      # 6. Configure AWS credentials so we can talk to S3.
+      #    Uses the official AWS action — sets AWS_ACCESS_KEY_ID,
+      #    AWS_SECRET_ACCESS_KEY, and AWS_DEFAULT_REGION as env vars
+      #    for all subsequent steps.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            us-east-1
+
+      # 7. Sync the build output to the S3 website bucket.
+      #    --delete removes files from S3 that are no longer in the build,
+      #    keeping the bucket in sync with the exact build output.
+      - name: Deploy to S3
+        run: aws s3 sync frontend/build/ s3://${{ secrets.S3_BUCKET_NAME }} --delete

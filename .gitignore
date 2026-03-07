@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform/tfplan
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Lambda build artifacts — compiled Pillow layer for manylinux (binary, large)
+terraform/lambdas/photo_processor/package/
+
+# Lambda zip files produced by archive_file data source
+*.zip
+
+# Frontend — handled by frontend/.gitignore but listed here too for root-level tools
+frontend/node_modules/
+frontend/build/
+frontend/src/aws-exports.js
+
+# Local env files
+.env.local

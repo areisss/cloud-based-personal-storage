@@ -1,0 +1,14 @@
+{
+  "resourceName": "fileprocessor",
+  "policyUUID": "2d47b115",
+  "bucketName": "areis-amplify-frontend-storage",
+  "storageAccess": "auth",
+  "guestAccess": [],
+  "authAccess": [
+    "CREATE_AND_UPDATE",
+    "READ",
+    "DELETE"
+  ],
+  "triggerFunction": "NONE",
+  "groupAccess": {}
+}
