@@ -15,6 +15,9 @@ BUCKET = os.environ["BUCKET_NAME"]
 TABLE = os.environ["TABLE_NAME"]
 THUMBNAIL_MAX_PX = 300
 
+# Storage classes the user may request. Anything else falls back to STANDARD.
+VALID_STORAGE_CLASSES = {"STANDARD", "STANDARD_IA", "GLACIER_IR"}
+
 
 def handler(event, context):
     # S3 can batch multiple records in one event, but for ObjectCreated
@@ -32,6 +35,12 @@ def process_photo(source_key, filename):
     image_bytes = response["Body"].read()
     content_type = response["ContentType"]
 
+    # Read the storage tier chosen by the user at upload time.
+    # Amplify sets metadata keys without the x-amz-meta- prefix in boto3 responses.
+    metadata = response.get("Metadata", {})
+    raw_tier  = metadata.get("storage-tier", "STANDARD").upper()
+    storage_class = raw_tier if raw_tier in VALID_STORAGE_CLASSES else "STANDARD"
+
     # io.BytesIO wraps raw bytes as a file-like object so Pillow can open it
     # without writing anything to disk (Lambda has limited /tmp storage).
     image = Image.open(io.BytesIO(image_bytes))
@@ -39,8 +48,11 @@ def process_photo(source_key, filename):
 
     # Copy the original bytes as-is to photos/originals/ — no re-encoding,
     # so the full-quality file is preserved exactly as uploaded.
+    # StorageClass is applied to the original only; the thumbnail stays STANDARD
+    # because it is loaded on every gallery page open.
     original_key = f"photos/originals/{filename}"
-    s3.put_object(Bucket=BUCKET, Key=original_key, Body=image_bytes, ContentType=content_type)
+    s3.put_object(Bucket=BUCKET, Key=original_key, Body=image_bytes, ContentType=content_type,
+                  StorageClass=storage_class)
 
     # thumbnail_image is a separate copy so we don't mutate the original.
     thumbnail_image = image.copy()
@@ -78,6 +90,7 @@ def process_photo(source_key, filename):
         "height":        original_height,
         "size_bytes":    len(image_bytes),
         "content_type":  content_type,
+        "storage_class": storage_class,
         # Store as ISO 8601 string — DynamoDB has no native datetime type.
         "uploaded_at":   datetime.now(timezone.utc).isoformat(),
     })

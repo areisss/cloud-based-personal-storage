@@ -21,6 +21,9 @@ FFPROBE = "/var/task/bin/ffprobe"
 
 THUMBNAIL_MAX_PX = 480
 
+# Storage classes the user may request. Anything else falls back to STANDARD.
+VALID_STORAGE_CLASSES = {"STANDARD", "STANDARD_IA", "GLACIER_IR"}
+
 CONTENT_TYPES = {
     "mp4":  "video/mp4",
     "mov":  "video/quicktime",
@@ -82,6 +85,12 @@ def process_video(source_key, filename):
     tmp_thumb = f"/tmp/{stem}.jpg"
 
     try:
+        # Read the storage tier chosen by the user at upload time before downloading.
+        head      = s3.head_object(Bucket=BUCKET, Key=source_key)
+        metadata  = head.get("Metadata", {})
+        raw_tier  = metadata.get("storage-tier", "STANDARD").upper()
+        storage_class = raw_tier if raw_tier in VALID_STORAGE_CLASSES else "STANDARD"
+
         # Download the video to Lambda's ephemeral /tmp storage.
         s3.download_file(BUCKET, source_key, tmp_video)
         size_bytes = os.path.getsize(tmp_video)
@@ -90,11 +99,14 @@ def process_video(source_key, filename):
         extract_thumbnail(tmp_video, tmp_thumb, duration)
 
         # Copy the original within S3 — avoids re-uploading a potentially large file.
+        # StorageClass is applied to the original only; the thumbnail stays STANDARD
+        # because it is loaded on every gallery page open.
         original_key = f"videos/originals/{filename}"
         s3.copy_object(
             Bucket=BUCKET,
             CopySource={"Bucket": BUCKET, "Key": source_key},
             Key=original_key,
+            StorageClass=storage_class,
         )
 
         # Upload thumbnail.
@@ -118,6 +130,7 @@ def process_video(source_key, filename):
             "duration_seconds": str(round(duration, 1)),
             "size_bytes":       size_bytes,
             "content_type":     CONTENT_TYPES.get(ext, "video/mp4"),
+            "storage_class":    storage_class,
             "uploaded_at":      datetime.now(timezone.utc).isoformat(),
         })
 
