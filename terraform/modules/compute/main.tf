@@ -199,8 +199,19 @@ data "archive_file" "video_processor" {
   output_path = "${path.root}/lambdas/video_processor/handler.zip"
 }
 
+# The FFmpeg zip exceeds Lambda's 50 MB direct upload limit (~67 MB zipped).
+# Upload it to S3 first and reference it from there — S3-backed Lambdas allow up to 250 MB.
+resource "aws_s3_object" "video_processor_zip" {
+  bucket     = var.bucket_id
+  key        = "lambda-packages/video_processor.zip"
+  source     = data.archive_file.video_processor.output_path
+  etag       = data.archive_file.video_processor.output_md5
+  depends_on = [data.archive_file.video_processor]
+}
+
 resource "aws_lambda_function" "video_processor" {
-  filename         = data.archive_file.video_processor.output_path
+  s3_bucket        = var.bucket_id
+  s3_key           = aws_s3_object.video_processor_zip.key
   function_name    = "${var.project_name}-video-processor-${var.environment}"
   role             = aws_iam_role.lambda.arn
   handler          = "handler.handler"
