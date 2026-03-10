@@ -1,37 +1,27 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import HomePage, { getPrefix } from './HomePage';
+import HomePage from './HomePage';
 
-// Mock uploadData so file selection doesn't attempt real S3 uploads.
-jest.mock('aws-amplify/storage', () => ({
-  uploadData: jest.fn(),
-}));
+function renderWithRouter(ui) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
-// getPrefix is a pure function — no mocks needed, just inputs and expected outputs.
-// test.each runs the same assertion for every row in the table.
-describe('getPrefix', () => {
-  test.each([
-    // Images → raw-photos/ (all supported extensions)
-    ['photo.jpg',  'raw-photos/'],
-    ['photo.jpeg', 'raw-photos/'],
-    ['photo.png',  'raw-photos/'],
-    ['photo.webp', 'raw-photos/'],
-    // Extension matching is case-insensitive
-    ['PHOTO.JPG',  'raw-photos/'],
-    // Zip archives → uploads-landing/ (processed by a separate pipeline)
-    ['backup.zip', 'uploads-landing/'],
-    // WhatsApp text exports → raw-whatsapp-uploads/
-    ['chat.txt',   'raw-whatsapp-uploads/'],
-    // Everything else → misc/
-    ['report.pdf', 'misc/'],
-    ['data.xlsx',  'misc/'],
-    ['video.mp4',  'misc/'],
-  ])('routes %s → %s', (filename, expected) => {
-    expect(getPrefix(filename)).toBe(expected);
-  });
+test('renders the hero headline', () => {
+  renderWithRouter(<HomePage />);
+  expect(screen.getByText('Your Personal Cloud')).toBeInTheDocument();
 });
 
-test('renders a file upload input', () => {
-  const { container } = render(<MemoryRouter><HomePage /></MemoryRouter>);
-  expect(container.querySelector('input[type="file"]')).toBeInTheDocument();
+test('renders a Sign in link pointing to /library', () => {
+  renderWithRouter(<HomePage />);
+  const links = screen.getAllByRole('link', { name: /sign in to your storage/i });
+  expect(links.length).toBeGreaterThan(0);
+  expect(links[0]).toHaveAttribute('href', '/library');
+});
+
+test('renders all four feature cards', () => {
+  renderWithRouter(<HomePage />);
+  expect(screen.getByText('Photos')).toBeInTheDocument();
+  expect(screen.getByText('Videos')).toBeInTheDocument();
+  expect(screen.getByText('WhatsApp')).toBeInTheDocument();
+  expect(screen.getByText('Other Files')).toBeInTheDocument();
 });

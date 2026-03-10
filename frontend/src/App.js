@@ -9,26 +9,47 @@ import VideosPage from './pages/VideosPage';
 import WhatsAppPage from './pages/WhatsAppPage';
 import OtherFilesPage from './pages/OtherFilesPage';
 
-function App() {
+function AuthedLibrary() {
   return (
     <Authenticator>
       {({ signOut, user }) => (
-        <BrowserRouter>
+        <>
           <Nav signOut={signOut} user={user} />
           <div style={{ paddingTop: '60px', minHeight: '100vh' }}>
             <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/library" element={<LibraryPage />} />
-              <Route path="/library/photos" element={<PhotosPage />} />
-              <Route path="/library/videos" element={<VideosPage />} />
-              <Route path="/library/whatsapp" element={<WhatsAppPage />} />
-              <Route path="/library/files" element={<OtherFilesPage />} />
+              <Route path="/" element={<LibraryPage />} />
+              <Route path="photos" element={<PhotosPage />} />
+              <Route path="videos" element={<VideosPage />} />
+              <Route path="whatsapp" element={<WhatsAppPage />} />
+              <Route path="files" element={<OtherFilesPage />} />
               <Route path="*" element={<Navigate to="/library" />} />
             </Routes>
           </div>
-        </BrowserRouter>
+        </>
       )}
     </Authenticator>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <>
+              <Nav />
+              <div style={{ paddingTop: '60px', minHeight: '100vh' }}>
+                <HomePage />
+              </div>
+            </>
+          }
+        />
+        <Route path="/library/*" element={<AuthedLibrary />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

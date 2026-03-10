@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 
 export default function Nav({ signOut, user }) {
   const { pathname } = useLocation();
+  const isAuthed = Boolean(user);
 
   const navLink = (to, label) => (
     <Link
@@ -36,23 +37,38 @@ export default function Nav({ signOut, user }) {
         ☁ My Cloud
       </Link>
 
-      {navLink('/', 'Home')}
-      {navLink('/library', 'Library')}
+      {isAuthed && navLink('/library', 'Library')}
 
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {user?.username && (
-          <span style={{ color: '#64748b', fontSize: '13px' }}>{user.username}</span>
+        {isAuthed ? (
+          <>
+            {user?.username && (
+              <span style={{ color: '#64748b', fontSize: '13px' }}>{user.username}</span>
+            )}
+            <button
+              onClick={signOut}
+              style={{
+                background: 'transparent', border: '1px solid #334155',
+                color: '#94a3b8', padding: '5px 14px', borderRadius: '6px',
+                fontSize: '13px', fontWeight: '500', cursor: 'pointer',
+              }}
+            >
+              Sign out
+            </button>
+          </>
+        ) : (
+          <Link
+            to="/library"
+            style={{
+              background: '#6366f1', color: '#fff',
+              padding: '5px 16px', borderRadius: '6px',
+              fontSize: '13px', fontWeight: '600',
+              textDecoration: 'none',
+            }}
+          >
+            Sign in
+          </Link>
         )}
-        <button
-          onClick={signOut}
-          style={{
-            background: 'transparent', border: '1px solid #334155',
-            color: '#94a3b8', padding: '5px 14px', borderRadius: '6px',
-            fontSize: '13px', fontWeight: '500',
-          }}
-        >
-          Sign out
-        </button>
       </div>
     </nav>
   );
