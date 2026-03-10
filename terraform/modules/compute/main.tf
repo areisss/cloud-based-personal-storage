@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "lambda_s3_dynamodb" {
       "dynamodb:Query",
       "dynamodb:Scan",
     ]
-    resources = [var.dynamodb_arn]
+    resources = [var.dynamodb_arn, var.video_dynamodb_arn]
   }
 
   # Athena permissions for whatsapp_api Lambda.
@@ -165,6 +165,197 @@ resource "aws_lambda_function" "photos_api" {
     Project     = var.project_name
     Environment = var.environment
   }
+}
+
+# --- Video Processor Lambda ---
+
+# Download a static FFmpeg + ffprobe binary for Linux x86_64 and bundle them
+# inside the Lambda package. Same pattern as the Pillow build for photo_processor.
+# triggers_replace re-runs the build whenever handler.py changes.
+resource "terraform_data" "build_video_processor" {
+  triggers_replace = filemd5("${path.root}/lambdas/video_processor/handler.py")
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      mkdir -p ${path.root}/lambdas/video_processor/package/bin /tmp/ffmpeg-extract && \
+      curl -L -o /tmp/ffmpeg-amd64.tar.xz \
+        "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" && \
+      tar -xJf /tmp/ffmpeg-amd64.tar.xz -C /tmp/ffmpeg-extract --strip-components=1 && \
+      cp /tmp/ffmpeg-extract/ffmpeg  ${path.root}/lambdas/video_processor/package/bin/ffmpeg && \
+      cp /tmp/ffmpeg-extract/ffprobe ${path.root}/lambdas/video_processor/package/bin/ffprobe && \
+      chmod +x \
+        ${path.root}/lambdas/video_processor/package/bin/ffmpeg \
+        ${path.root}/lambdas/video_processor/package/bin/ffprobe && \
+      cp ${path.root}/lambdas/video_processor/handler.py \
+         ${path.root}/lambdas/video_processor/package/handler.py
+    EOT
+  }
+}
+
+data "archive_file" "video_processor" {
+  depends_on  = [terraform_data.build_video_processor]
+  type        = "zip"
+  source_dir  = "${path.root}/lambdas/video_processor/package"
+  output_path = "${path.root}/lambdas/video_processor/handler.zip"
+}
+
+resource "aws_lambda_function" "video_processor" {
+  filename         = data.archive_file.video_processor.output_path
+  function_name    = "${var.project_name}-video-processor-${var.environment}"
+  role             = aws_iam_role.lambda.arn
+  handler          = "handler.handler"
+  runtime          = "python3.12"
+  architectures    = ["x86_64"]
+  source_code_hash = data.archive_file.video_processor.output_base64sha256
+  timeout          = 120
+  memory_size      = 512
+
+  # Extra /tmp space for large video files (default is 512 MB).
+  ephemeral_storage {
+    size = 2048
+  }
+
+  environment {
+    variables = {
+      BUCKET_NAME = var.bucket_id
+      TABLE_NAME  = var.video_dynamodb_table_name
+    }
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_lambda_permission" "s3_invoke_video_processor" {
+  statement_id  = "AllowS3InvokeVideoProcessor"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.video_processor.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = var.bucket_arn
+}
+
+# archive_file zips the handler directly — no build step needed since videos_api
+# has no external dependencies beyond boto3, which is already available in Lambda.
+data "archive_file" "videos_api" {
+  type        = "zip"
+  source_file = "${path.root}/lambdas/videos_api/handler.py"
+  output_path = "${path.root}/lambdas/videos_api/handler.zip"
+}
+
+resource "aws_lambda_function" "videos_api" {
+  filename         = data.archive_file.videos_api.output_path
+  function_name    = "${var.project_name}-videos-api-${var.environment}"
+  role             = aws_iam_role.lambda.arn
+  handler          = "handler.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.videos_api.output_base64sha256
+  timeout          = 30
+
+  environment {
+    variables = {
+      BUCKET_NAME = var.bucket_id
+      TABLE_NAME  = var.video_dynamodb_table_name
+    }
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_lambda_permission" "apigw_invoke_videos_api" {
+  statement_id  = "AllowAPIGatewayInvokeVideosApi"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.videos_api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+# /videos resource on the same API Gateway
+resource "aws_api_gateway_resource" "videos" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "videos"
+}
+
+resource "aws_api_gateway_method" "videos_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.videos.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "videos_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.videos.id
+  http_method             = aws_api_gateway_method.videos_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.videos_api.invoke_arn
+}
+
+resource "aws_api_gateway_method" "videos_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.videos.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "videos_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.videos.id
+  http_method = aws_api_gateway_method.videos_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "videos_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.videos.id
+  http_method = aws_api_gateway_method.videos_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "videos_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.videos.id
+  http_method = aws_api_gateway_method.videos_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.videos_options]
+}
+
+# Separate deployment and stage for /videos, following the same pattern as /chats.
+resource "aws_api_gateway_deployment" "videos" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  depends_on = [
+    aws_api_gateway_integration.videos_get,
+    aws_api_gateway_integration_response.videos_options,
+  ]
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_api_gateway_stage" "videos" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  deployment_id = aws_api_gateway_deployment.videos.id
+  stage_name    = "${var.environment}-videos"
 }
 
 # --- WhatsApp API Lambda ---
@@ -461,6 +652,7 @@ resource "aws_s3_bucket_notification" "uploads" {
   bucket = var.bucket_id
   depends_on = [
     aws_lambda_permission.s3_invoke_photo_processor,
+    aws_lambda_permission.s3_invoke_video_processor,
     aws_lambda_permission.s3_invoke_whatsapp_bronze,
   ]
 
@@ -468,6 +660,12 @@ resource "aws_s3_bucket_notification" "uploads" {
     lambda_function_arn = aws_lambda_function.photo_processor.arn
     events              = ["s3:ObjectCreated:*"]
     filter_prefix       = "raw-photos/"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.video_processor.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "raw-videos/"
   }
 
   lambda_function {

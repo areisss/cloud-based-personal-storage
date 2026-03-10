@@ -15,3 +15,11 @@ output "photo_metadata_table_name" {
 output "photo_metadata_table_arn" {
   value = aws_dynamodb_table.photo_metadata.arn
 }
+
+output "video_metadata_table_name" {
+  value = aws_dynamodb_table.video_metadata.name
+}
+
+output "video_metadata_table_arn" {
+  value = aws_dynamodb_table.video_metadata.arn
+}

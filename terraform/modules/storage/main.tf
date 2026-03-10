@@ -67,3 +67,19 @@ resource "aws_dynamodb_table" "photo_metadata" {
     Environment = var.environment
   }
 }
+
+resource "aws_dynamodb_table" "video_metadata" {
+  name         = "${var.project_name}-video-metadata-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "video_id"
+
+  attribute {
+    name = "video_id"
+    type = "S"
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}

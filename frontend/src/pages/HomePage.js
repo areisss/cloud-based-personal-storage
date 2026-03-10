@@ -7,11 +7,13 @@ export function getPrefix(filename) {
   if (ext === 'zip') return 'uploads-landing/';
   if (ext === 'txt') return 'raw-whatsapp-uploads/';
   if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'raw-photos/';
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'raw-videos/';
   return 'misc/';
 }
 
 const DEST_LABEL = {
   'raw-photos/':           'Photos',
+  'raw-videos/':           'Videos',
   'raw-whatsapp-uploads/': 'WhatsApp',
   'uploads-landing/':      'Archives',
   'misc/':                 'Files',
@@ -84,6 +86,7 @@ function HomePage() {
           </h2>
           <p style={{ margin: '0 0 24px', color: '#64748b', fontSize: '14px', lineHeight: '1.6' }}>
             Photos (.jpg, .png) → Photos library<br />
+            Videos (.mp4, .mov, .avi…) → Videos library<br />
             WhatsApp exports (.txt) → Messages<br />
             Archives (.zip) or anything else → Files
           </p>

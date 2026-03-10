@@ -22,6 +22,14 @@ variable "dynamodb_table_name" {
   description = "DynamoDB PhotoMetadata table name (injected into photo processor Lambda)"
 }
 
+variable "video_dynamodb_arn" {
+  description = "ARN of the DynamoDB VideoMetadata table"
+}
+
+variable "video_dynamodb_table_name" {
+  description = "DynamoDB VideoMetadata table name (injected into video processor Lambda)"
+}
+
 # The Cognito User Pool ARN is needed so the API Gateway authorizer knows
 # which User Pool to validate tokens against.
 variable "cognito_user_pool_arn" {

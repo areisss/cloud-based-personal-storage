@@ -17,6 +17,9 @@ __pycache__/
 # Lambda build artifacts — compiled Pillow layer for manylinux (binary, large)
 terraform/lambdas/photo_processor/package/
 
+# Lambda build artifacts — static FFmpeg binary for video_processor (binary, large)
+terraform/lambdas/video_processor/package/
+
 # Lambda zip files produced by archive_file data source
 *.zip
 

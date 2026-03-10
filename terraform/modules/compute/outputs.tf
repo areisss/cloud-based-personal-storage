@@ -7,3 +7,7 @@ output "photos_api_url" {
 output "chats_api_url" {
   value = "${aws_api_gateway_stage.chats.invoke_url}/chats"
 }
+
+output "videos_api_url" {
+  value = "${aws_api_gateway_stage.videos.invoke_url}/videos"
+}

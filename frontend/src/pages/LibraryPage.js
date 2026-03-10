@@ -10,6 +10,14 @@ const SECTIONS = [
     accent: '#3b82f6',
   },
   {
+    to: '/library/videos',
+    emoji: '🎬',
+    label: 'Videos',
+    description: 'Browse your videos grouped by date, with thumbnails and duration.',
+    headerBg: '#fff7ed',
+    accent: '#f97316',
+  },
+  {
     to: '/library/whatsapp',
     emoji: '💬',
     label: 'WhatsApp',

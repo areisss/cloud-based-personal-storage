@@ -42,16 +42,18 @@ data "aws_cognito_user_pools" "main" {
 # Creates the IAM role, Pillow build step, photo_processor Lambda, S3 trigger,
 # photos_api Lambda, and API Gateway
 module "compute" {
-  source                = "./modules/compute"
-  project_name          = "cloud-personal-storage"
-  environment           = "dev"
-  bucket_arn            = data.aws_s3_bucket.main.arn
-  bucket_id             = data.aws_s3_bucket.main.id
-  dynamodb_arn          = module.storage.photo_metadata_table_arn
-  dynamodb_table_name   = module.storage.photo_metadata_table_name
-  cognito_user_pool_arn = tolist(data.aws_cognito_user_pools.main.arns)[0]
-  glue_database_name    = module.analytics.glue_database_name
-  athena_workgroup      = module.analytics.athena_workgroup
+  source                    = "./modules/compute"
+  project_name              = "cloud-personal-storage"
+  environment               = "dev"
+  bucket_arn                = data.aws_s3_bucket.main.arn
+  bucket_id                 = data.aws_s3_bucket.main.id
+  dynamodb_arn              = module.storage.photo_metadata_table_arn
+  dynamodb_table_name       = module.storage.photo_metadata_table_name
+  video_dynamodb_arn        = module.storage.video_metadata_table_arn
+  video_dynamodb_table_name = module.storage.video_metadata_table_name
+  cognito_user_pool_arn     = tolist(data.aws_cognito_user_pools.main.arns)[0]
+  glue_database_name        = module.analytics.glue_database_name
+  athena_workgroup          = module.analytics.athena_workgroup
 }
 
 # Creates Glue catalog DB, Glue job, and Athena workgroup
@@ -78,4 +80,8 @@ output "photos_api_url" {
 
 output "chats_api_url" {
   value = module.compute.chats_api_url
+}
+
+output "videos_api_url" {
+  value = module.compute.videos_api_url
 }
