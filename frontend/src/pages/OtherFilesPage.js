@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { list, getUrl } from 'aws-amplify/storage';
 import { Link } from 'react-router-dom';
+import { useTheme } from '../ThemeContext';
 
 const SECTIONS = [
   { prefix: 'misc/',             label: 'Miscellaneous', emoji: '📄' },
@@ -8,6 +9,7 @@ const SECTIONS = [
 ];
 
 function OtherFilesPage() {
+  const { t } = useTheme();
   const [files, setFiles]     = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -36,7 +38,7 @@ function OtherFilesPage() {
   }, []);
 
   if (loading) return (
-    <div style={{ textAlign: 'center', padding: '80px 24px', color: '#94a3b8', fontSize: '15px' }}>
+    <div style={{ textAlign: 'center', padding: '80px 24px', color: t.subtle, fontSize: '15px' }}>
       Loading files…
     </div>
   );
@@ -49,10 +51,10 @@ function OtherFilesPage() {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 24px' }}>
-      <Link to="/library" style={{ color: '#6366f1', fontSize: '14px', fontWeight: '500' }}>
+      <Link to="/library" style={{ color: t.accent, fontSize: '14px', fontWeight: '500' }}>
         ← Back to Library
       </Link>
-      <h1 style={{ margin: '16px 0 32px', fontSize: '28px', fontWeight: '800', color: '#0f172a' }}>
+      <h1 style={{ margin: '16px 0 32px', fontSize: '28px', fontWeight: '800', color: t.text }}>
         Other Files
       </h1>
 
@@ -61,27 +63,26 @@ function OtherFilesPage() {
           const items = files[prefix] ?? [];
           return (
             <div key={prefix} style={{
-              background: '#fff',
-              border: '1px solid #e2e8f0',
+              background: t.surface,
+              border: `1px solid ${t.border}`,
               borderRadius: '12px',
               overflow: 'hidden',
             }}>
-              {/* Section header */}
               <div style={{
                 padding: '14px 20px',
-                background: '#f8fafc',
-                borderBottom: '1px solid #e2e8f0',
+                background: t.sectionHeaderBg,
+                borderBottom: `1px solid ${t.border}`,
                 display: 'flex', alignItems: 'center', gap: '10px',
               }}>
                 <span style={{ fontSize: '20px' }}>{emoji}</span>
-                <span style={{ fontWeight: '700', fontSize: '15px', color: '#0f172a' }}>{label}</span>
-                <span style={{ marginLeft: 'auto', fontSize: '13px', color: '#94a3b8' }}>
+                <span style={{ fontWeight: '700', fontSize: '15px', color: t.text }}>{label}</span>
+                <span style={{ marginLeft: 'auto', fontSize: '13px', color: t.subtle }}>
                   {items.length} {items.length === 1 ? 'file' : 'files'}
                 </span>
               </div>
 
               {items.length === 0 ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
+                <div style={{ padding: '32px', textAlign: 'center', color: t.subtle, fontSize: '14px' }}>
                   No files yet
                 </div>
               ) : (
@@ -91,7 +92,7 @@ function OtherFilesPage() {
                     return (
                       <li key={file.key} style={{
                         padding: '10px 20px',
-                        borderBottom: '1px solid #f8fafc',
+                        borderBottom: `1px solid ${t.border2}`,
                         display: 'flex', alignItems: 'center', gap: '12px',
                       }}>
                         <span style={{ fontSize: '18px' }}>📄</span>
@@ -99,7 +100,7 @@ function OtherFilesPage() {
                           href={file.url}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ color: '#334155', fontSize: '14px', flex: 1 }}
+                          style={{ color: t.fileLinkText, fontSize: '14px', flex: 1 }}
                         >
                           {name}
                         </a>

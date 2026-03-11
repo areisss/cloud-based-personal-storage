@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ThemeProvider } from './ThemeContext';
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { fetchAuthSession } from 'aws-amplify/auth';
@@ -55,23 +56,25 @@ function AuthedLibrary() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <>
-              <Nav />
-              <div style={{ paddingTop: '60px', minHeight: '100vh' }}>
-                <HomePage />
-              </div>
-            </>
-          }
-        />
-        <Route path="/library/*" element={<AuthedLibrary />} />
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <Nav />
+                <div style={{ paddingTop: '60px', minHeight: '100vh' }}>
+                  <HomePage />
+                </div>
+              </>
+            }
+          />
+          <Route path="/library/*" element={<AuthedLibrary />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

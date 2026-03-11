@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { uploadData } from 'aws-amplify/storage';
 import { Link } from 'react-router-dom';
+import { useTheme } from '../ThemeContext';
 
 export function getPrefix(filename) {
   const ext = filename.split('.').pop().toLowerCase();
@@ -26,6 +27,7 @@ const TIERS = [
 ];
 
 function PillGroup({ options, value, onChange }) {
+  const { t } = useTheme();
   return (
     <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
       {options.map(opt => {
@@ -37,9 +39,9 @@ function PillGroup({ options, value, onChange }) {
             style={{
               padding: '5px 14px',
               borderRadius: '999px',
-              border: active ? 'none' : '1px solid #e2e8f0',
-              background: active ? '#6366f1' : 'transparent',
-              color: active ? '#fff' : '#64748b',
+              border: active ? 'none' : `1px solid ${t.border}`,
+              background: active ? t.accent : 'transparent',
+              color: active ? '#fff' : t.muted,
               fontSize: '13px', fontWeight: '500', cursor: 'pointer',
             }}
           >
@@ -57,6 +59,7 @@ function PillGroup({ options, value, onChange }) {
 }
 
 function UploadCard() {
+  const { t } = useTheme();
   const [status, setStatus]           = useState(null);
   const [dest, setDest]               = useState('');
   const [errMsg, setErrMsg]           = useState('');
@@ -89,8 +92,8 @@ function UploadCard() {
 
   return (
     <div style={{
-      background: '#fff',
-      border: '1px solid #e2e8f0',
+      background: t.surface,
+      border: `1px solid ${t.border}`,
       borderRadius: '16px',
       padding: '32px',
       textAlign: 'center',
@@ -98,17 +101,17 @@ function UploadCard() {
       marginBottom: '48px',
     }}>
       <div style={{ fontSize: '28px', marginBottom: '10px' }}>⬆</div>
-      <h2 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: '700', color: '#0f172a' }}>
+      <h2 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: '700', color: t.text }}>
         Upload a file
       </h2>
 
       <div style={{
-        background: '#f8fafc', borderRadius: '10px',
+        background: t.bg2, borderRadius: '10px',
         padding: '16px', marginBottom: '20px',
         display: 'flex', flexDirection: 'column', gap: '12px',
       }}>
         <div>
-          <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: t.subtle, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Processing
           </p>
           <PillGroup
@@ -120,14 +123,14 @@ function UploadCard() {
             onChange={setStorageMode}
           />
           {storageMode === 'raw' && (
-            <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#94a3b8' }}>
+            <p style={{ margin: '6px 0 0', fontSize: '11px', color: t.subtle }}>
               File will be stored as-is in Other Files, with no thumbnail or indexing.
             </p>
           )}
         </div>
 
         <div>
-          <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: t.subtle, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Storage tier
           </p>
           <PillGroup
@@ -136,7 +139,7 @@ function UploadCard() {
             onChange={setStorageTier}
           />
           {storageTier !== 'STANDARD' && storageMode !== 'raw' && (
-            <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#94a3b8' }}>
+            <p style={{ margin: '6px 0 0', fontSize: '11px', color: t.subtle }}>
               Applied to the original file. Thumbnails always use Standard.
             </p>
           )}
@@ -150,7 +153,7 @@ function UploadCard() {
 
       <label style={{
         display: 'inline-block',
-        background: '#6366f1', color: '#fff',
+        background: t.accent, color: '#fff',
         padding: '10px 24px', borderRadius: '8px',
         fontWeight: '600', fontSize: '14px', cursor: 'pointer',
       }}>
@@ -159,7 +162,7 @@ function UploadCard() {
       </label>
 
       {status === 'uploading' && (
-        <p style={{ margin: '16px 0 0', color: '#6366f1', fontSize: '14px' }}>
+        <p style={{ margin: '16px 0 0', color: t.accent, fontSize: '14px' }}>
           Uploading to {dest}…
         </p>
       )}
@@ -183,7 +186,7 @@ const SECTIONS = [
     emoji: '📷',
     label: 'Photos',
     description: 'Browse your photo collection with thumbnails and one-click downloads.',
-    headerBg: '#eff6ff',
+    headerBg: { light: '#eff6ff', dark: '#1e2a4a' },
     accent: '#3b82f6',
   },
   {
@@ -191,7 +194,7 @@ const SECTIONS = [
     emoji: '🎬',
     label: 'Videos',
     description: 'Browse your videos grouped by date, with thumbnails and duration.',
-    headerBg: '#fff7ed',
+    headerBg: { light: '#fff7ed', dark: '#2d1800' },
     accent: '#f97316',
   },
   {
@@ -199,7 +202,7 @@ const SECTIONS = [
     emoji: '💬',
     label: 'WhatsApp',
     description: 'Search and filter your exported WhatsApp conversations by sender or date.',
-    headerBg: '#f0fdf4',
+    headerBg: { light: '#f0fdf4', dark: '#052e16' },
     accent: '#22c55e',
   },
   {
@@ -207,16 +210,17 @@ const SECTIONS = [
     emoji: '📁',
     label: 'Other Files',
     description: 'Miscellaneous files, ZIP archives, and anything else you have uploaded.',
-    headerBg: '#faf5ff',
+    headerBg: { light: '#faf5ff', dark: '#1a0a3d' },
     accent: '#a855f7',
   },
 ];
 
 function DemoBanner() {
+  const { t } = useTheme();
   return (
     <div style={{
-      background: '#fefce8',
-      border: '1px solid #fde047',
+      background: t.demoBannerBg,
+      border: `1px solid ${t.demoBannerBorder}`,
       borderRadius: '10px',
       padding: '12px 20px',
       marginBottom: '32px',
@@ -226,10 +230,10 @@ function DemoBanner() {
     }}>
       <span style={{ fontSize: '18px' }}>👁</span>
       <div>
-        <span style={{ fontWeight: '700', color: '#713f12', fontSize: '14px' }}>
+        <span style={{ fontWeight: '700', color: t.demoBannerHeading, fontSize: '14px' }}>
           Demo mode — read only.
         </span>
-        <span style={{ color: '#854d0e', fontSize: '14px', marginLeft: '6px' }}>
+        <span style={{ color: t.demoBannerBody, fontSize: '14px', marginLeft: '6px' }}>
           You can browse all content but uploads are disabled for this account.
         </span>
       </div>
@@ -238,12 +242,13 @@ function DemoBanner() {
 }
 
 function LibraryPage({ isDemo = false }) {
+  const { dark, t } = useTheme();
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 24px' }}>
-      <h1 style={{ margin: '0 0 8px', fontSize: '30px', fontWeight: '800', color: '#0f172a' }}>
+      <h1 style={{ margin: '0 0 8px', fontSize: '30px', fontWeight: '800', color: t.text }}>
         Your Library
       </h1>
-      <p style={{ margin: '0 0 40px', color: '#64748b', fontSize: '16px' }}>
+      <p style={{ margin: '0 0 40px', color: t.muted, fontSize: '16px' }}>
         Everything you have uploaded, organised by type.
       </p>
 
@@ -261,15 +266,15 @@ function LibraryPage({ isDemo = false }) {
             to={to}
             style={{
               display: 'block',
-              background: '#fff',
-              border: '1px solid #e2e8f0',
+              background: t.surface,
+              border: `1px solid ${t.border}`,
               borderRadius: '16px',
               overflow: 'hidden',
               color: 'inherit',
               transition: 'box-shadow 0.2s, transform 0.2s',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.12)';
               e.currentTarget.style.transform = 'translateY(-2px)';
             }}
             onMouseLeave={e => {
@@ -278,7 +283,7 @@ function LibraryPage({ isDemo = false }) {
             }}
           >
             <div style={{
-              background: headerBg,
+              background: headerBg[dark ? 'dark' : 'light'],
               padding: '32px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '44px',
@@ -286,10 +291,10 @@ function LibraryPage({ isDemo = false }) {
               {emoji}
             </div>
             <div style={{ padding: '20px 22px' }}>
-              <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: '#0f172a' }}>
+              <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: t.text }}>
                 {label}
               </h2>
-              <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '14px', lineHeight: '1.55' }}>
+              <p style={{ margin: '0 0 16px', color: t.muted, fontSize: '14px', lineHeight: '1.55' }}>
                 {description}
               </p>
               <span style={{ color: accent, fontSize: '14px', fontWeight: '600' }}>

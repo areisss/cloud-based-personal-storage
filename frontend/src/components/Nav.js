@@ -1,15 +1,17 @@
 import { Link, useLocation } from 'react-router-dom';
+import { useTheme } from '../ThemeContext';
 
 export default function Nav({ signOut, user }) {
   const { pathname } = useLocation();
+  const { dark, toggle, t } = useTheme();
   const isAuthed = Boolean(user);
 
   const navLink = (to, label) => (
     <Link
       to={to}
       style={{
-        color: pathname === to ? '#ffffff' : '#94a3b8',
-        background: pathname === to ? 'rgba(255,255,255,0.1)' : 'transparent',
+        color: pathname === to ? t.navText : t.navMuted,
+        background: pathname === to ? t.navActive : 'transparent',
         padding: '6px 14px',
         borderRadius: '6px',
         fontSize: '14px',
@@ -24,13 +26,13 @@ export default function Nav({ signOut, user }) {
   return (
     <nav style={{
       position: 'fixed', top: 0, left: 0, right: 0,
-      height: '60px', background: '#0f172a',
+      height: '60px', background: t.navBg,
       display: 'flex', alignItems: 'center',
       padding: '0 24px', gap: '4px', zIndex: 100,
-      borderBottom: '1px solid #1e293b',
+      borderBottom: `1px solid ${t.navBorder}`,
     }}>
       <Link to="/" style={{
-        color: '#f8fafc', fontWeight: 700, fontSize: '17px',
+        color: t.navText, fontWeight: 700, fontSize: '17px',
         textDecoration: 'none', marginRight: '20px',
         display: 'flex', alignItems: 'center', gap: '8px',
       }}>
@@ -39,17 +41,35 @@ export default function Nav({ signOut, user }) {
 
       {isAuthed && navLink('/library', 'Library')}
 
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button
+          onClick={toggle}
+          title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          style={{
+            background: 'transparent',
+            border: '1px solid #334155',
+            color: t.navMuted,
+            width: '32px', height: '32px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          {dark ? '☀' : '🌙'}
+        </button>
+
         {isAuthed ? (
           <>
             {user?.username && (
-              <span style={{ color: '#64748b', fontSize: '13px' }}>{user.username}</span>
+              <span style={{ color: t.navMuted, fontSize: '13px' }}>{user.username}</span>
             )}
             <button
               onClick={signOut}
               style={{
                 background: 'transparent', border: '1px solid #334155',
-                color: '#94a3b8', padding: '5px 14px', borderRadius: '6px',
+                color: t.navMuted, padding: '5px 14px', borderRadius: '6px',
                 fontSize: '13px', fontWeight: '500', cursor: 'pointer',
               }}
             >
@@ -60,7 +80,7 @@ export default function Nav({ signOut, user }) {
           <Link
             to="/library"
             style={{
-              background: '#6366f1', color: '#fff',
+              background: t.accent, color: '#fff',
               padding: '5px 16px', borderRadius: '6px',
               fontSize: '13px', fontWeight: '600',
               textDecoration: 'none',

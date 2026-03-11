@@ -30,3 +30,4 @@ frontend/src/aws-exports.js
 
 # Local env files
 .env.local
+frontend/.env

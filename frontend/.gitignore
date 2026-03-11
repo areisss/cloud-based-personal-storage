@@ -22,6 +22,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# sensitive amplify config
+amplify/team-provider-info.json
+
+# local environment variables (API endpoints)
+.env
+
 #amplify-do-not-edit-begin
 amplify/\#current-cloud-backend
 amplify/.config/local-*
