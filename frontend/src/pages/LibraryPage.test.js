@@ -34,9 +34,25 @@ describe('getPrefix', () => {
   });
 });
 
-test('renders a file upload input', () => {
+test('renders a file upload input for a regular user', () => {
   const { container } = renderWithRouter(<LibraryPage />);
   expect(container.querySelector('input[type="file"]')).toBeInTheDocument();
+});
+
+test('hides the upload card in demo mode', () => {
+  const { container } = renderWithRouter(<LibraryPage isDemo={true} />);
+  expect(container.querySelector('input[type="file"]')).toBeNull();
+});
+
+test('shows demo banner in demo mode', () => {
+  renderWithRouter(<LibraryPage isDemo={true} />);
+  expect(screen.getByText(/demo mode/i)).toBeInTheDocument();
+  expect(screen.getByText(/uploads are disabled/i)).toBeInTheDocument();
+});
+
+test('does not show demo banner for regular user', () => {
+  renderWithRouter(<LibraryPage />);
+  expect(screen.queryByText(/demo mode/i)).toBeNull();
 });
 
 test('renders all four section links', () => {

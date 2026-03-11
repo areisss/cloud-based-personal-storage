@@ -212,7 +212,32 @@ const SECTIONS = [
   },
 ];
 
-function LibraryPage() {
+function DemoBanner() {
+  return (
+    <div style={{
+      background: '#fefce8',
+      border: '1px solid #fde047',
+      borderRadius: '10px',
+      padding: '12px 20px',
+      marginBottom: '32px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+    }}>
+      <span style={{ fontSize: '18px' }}>👁</span>
+      <div>
+        <span style={{ fontWeight: '700', color: '#713f12', fontSize: '14px' }}>
+          Demo mode — read only.
+        </span>
+        <span style={{ color: '#854d0e', fontSize: '14px', marginLeft: '6px' }}>
+          You can browse all content but uploads are disabled for this account.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function LibraryPage({ isDemo = false }) {
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 24px' }}>
       <h1 style={{ margin: '0 0 8px', fontSize: '30px', fontWeight: '800', color: '#0f172a' }}>
@@ -222,7 +247,8 @@ function LibraryPage() {
         Everything you have uploaded, organised by type.
       </p>
 
-      <UploadCard />
+      {isDemo && <DemoBanner />}
+      {!isDemo && <UploadCard />}
 
       <div style={{
         display: 'grid',

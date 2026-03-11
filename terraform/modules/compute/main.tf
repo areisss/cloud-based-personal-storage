@@ -369,6 +369,20 @@ resource "aws_api_gateway_stage" "videos" {
   stage_name    = "${var.environment}-videos"
 }
 
+resource "aws_api_gateway_method_settings" "videos_throttle" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.videos.stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_rate_limit  = 10
+    throttling_burst_limit = 20
+    logging_level          = "OFF"
+    metrics_enabled        = false
+    data_trace_enabled     = false
+  }
+}
+
 # --- WhatsApp API Lambda ---
 
 data "archive_file" "whatsapp_api" {
@@ -491,6 +505,20 @@ resource "aws_api_gateway_stage" "chats" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   deployment_id = aws_api_gateway_deployment.chats.id
   stage_name    = "${var.environment}-chats"
+}
+
+resource "aws_api_gateway_method_settings" "chats_throttle" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.chats.stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_rate_limit  = 10
+    throttling_burst_limit = 20
+    logging_level          = "OFF"
+    metrics_enabled        = false
+    data_trace_enabled     = false
+  }
 }
 
 # --- WhatsApp Bronze Lambda ---
@@ -653,6 +681,24 @@ resource "aws_api_gateway_stage" "dev" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   deployment_id = aws_api_gateway_deployment.main.id
   stage_name    = var.environment
+}
+
+# Stage-level throttle — applies to every method on every resource in this stage.
+# Caps requests at 10/s sustained and 20/s burst to prevent Lambda/DynamoDB abuse
+# from demo or anonymous traffic. Set logging_level=OFF to avoid requiring a
+# CloudWatch IAM role on the API Gateway account settings.
+resource "aws_api_gateway_method_settings" "photos_throttle" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.dev.stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_rate_limit  = 10
+    throttling_burst_limit = 20
+    logging_level          = "OFF"
+    metrics_enabled        = false
+    data_trace_enabled     = false
+  }
 }
 
 # Tells S3 to fire an event to the Lambda whenever a file is created under raw-photos/.
