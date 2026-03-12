@@ -2,7 +2,7 @@
 
 A full-stack personal cloud storage system built on AWS, with automated media processing, a searchable WhatsApp archive, and a React frontend. Built as a portfolio project to demonstrate end-to-end cloud engineering.
 
-**Live demo:** http://cloud-personal-storage-website-dev.s3-website-us-east-1.amazonaws.com
+**Live demo:** http://cloud-personal-storage-website-dev.s3-website.us-east-1.amazonaws.com
 **Demo credentials:** `demo@example.com` / `Demo2024!`
 
 ---
