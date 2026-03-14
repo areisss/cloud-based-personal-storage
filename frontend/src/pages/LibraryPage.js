@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { uploadData } from 'aws-amplify/storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../ThemeContext';
 
 export function getPrefix(filename) {
   const ext = filename.split('.').pop().toLowerCase();
-  if (ext === 'zip') return 'uploads-landing/';
+  if (ext === 'zip') return 'raw-zips/';
   if (ext === 'txt') return 'raw-whatsapp-uploads/';
   if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'raw-photos/';
   if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'raw-videos/';
@@ -16,15 +17,31 @@ const DEST_LABEL = {
   'raw-photos/':           'Photos',
   'raw-videos/':           'Videos',
   'raw-whatsapp-uploads/': 'WhatsApp',
-  'uploads-landing/':      'Archives',
+  'raw-zips/':             'Archives',
   'misc/':                 'Files',
 };
 
+// Processing stages shown after upload, per destination
+const PROC_STAGES = {
+  Photos:   ['Upload photo',  'Create thumbnail'],
+  Videos:   ['Upload video',  'Create thumbnail'],
+  WhatsApp: ['Upload export', 'Parse messages'],
+  Archives: ['Upload zip',    'Extract contents', 'Process photos', 'Process videos'],
+  Files:    ['Upload file'],
+};
+
 const TIERS = [
-  { value: 'STANDARD',    label: 'Standard',    hint: 'Default'    },
-  { value: 'STANDARD_IA', label: 'Standard-IA', hint: 'Lower cost' },
-  { value: 'GLACIER_IR',  label: 'Glacier',     hint: 'Archival'   },
+  { value: 'AUTO',        label: 'Auto',        hint: '→ Glacier after 1 day' },
+  { value: 'STANDARD',    label: 'Standard',    hint: 'Keep in Standard'       },
+  { value: 'STANDARD_IA', label: 'Standard-IA', hint: 'Lower cost'             },
+  { value: 'GLACIER_IR',  label: 'Glacier IR',  hint: 'Archival'               },
 ];
+
+function fmtBytes(n) {
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
 
 function PillGroup({ options, value, onChange }) {
   const { t } = useTheme();
@@ -58,48 +75,255 @@ function PillGroup({ options, value, onChange }) {
   );
 }
 
+function StageList({ stages, activeIdx }) {
+  const { t } = useTheme();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
+      {stages.map((s, i) => {
+        const done   = i < activeIdx;
+        const active = i === activeIdx;
+        return (
+          <div
+            key={s}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px',
+              color: done ? '#10b981' : active ? t.accent : t.muted,
+            }}
+          >
+            <span style={{
+              width: '18px', textAlign: 'center', flexShrink: 0,
+              display: 'inline-block',
+              animation: active ? 'spin 1s linear infinite' : 'none',
+            }}>
+              {done ? '✓' : active ? '⟳' : '○'}
+            </span>
+            <span style={{ fontWeight: active ? '600' : '400' }}>{s}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function UploadCard() {
   const { t } = useTheme();
-  const [status, setStatus]           = useState(null);
-  const [dest, setDest]               = useState('');
-  const [errMsg, setErrMsg]           = useState('');
-  const [storageMode, setStorageMode] = useState('auto');
-  const [storageTier, setStorageTier] = useState('STANDARD');
+  const inputRef   = useRef(null);
+  const mountedRef = useRef(true);
 
-  async function handleUpload(e) {
+  const [storageMode, setStorageMode] = useState('auto');
+  const [storageTier, setStorageTier] = useState('AUTO');
+
+  // phase: idle | confirm | uploading | processing | done | error
+  const [phase,     setPhase]     = useState('idle');
+  const [pending,   setPending]   = useState(null);   // { file, prefix, dest }
+  const [uploadPct, setUploadPct] = useState(0);
+  const [stageIdx,  setStageIdx]  = useState(0);
+  const [errMsg,    setErrMsg]    = useState('');
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Advance processing stages automatically while in processing phase
+  useEffect(() => {
+    if (phase !== 'processing' || !pending) return;
+    const stages = PROC_STAGES[pending.dest] || ['Upload file'];
+    if (stageIdx >= stages.length - 1) return; // already at last stage
+
+    const delay = stageIdx === 0 ? 1000 : 3500;
+    const timer = setTimeout(() => {
+      if (mountedRef.current) setStageIdx(prev => prev + 1);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [phase, pending, stageIdx]);
+
+  function handleFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-
     const prefix = storageMode === 'raw' ? 'misc/' : getPrefix(file.name);
-    setDest(DEST_LABEL[prefix]);
-    setStatus('uploading');
-
-    try {
-      await uploadData({
-        path: prefix + file.name,
-        data: file,
-        options: {
-          metadata: { 'storage-tier': storageTier },
-        },
-      });
-      setStatus('done');
-    } catch (err) {
-      setErrMsg(err.message);
-      setStatus('error');
-    }
+    setPending({ file, prefix, dest: DEST_LABEL[prefix] });
+    setPhase('confirm');
     e.target.value = '';
   }
 
+  function handleCancel() {
+    setPending(null);
+    setPhase('idle');
+  }
+
+  async function handleConfirm() {
+    const { file, prefix, dest } = pending;
+    setPhase('uploading');
+    setUploadPct(0);
+    try {
+      const session  = await fetchAuthSession();
+      const ownerSub = session.tokens.idToken.payload.sub;
+
+      const task = uploadData({
+        path: prefix + file.name,
+        data: file,
+        options: {
+          metadata: { 'storage-tier': storageTier, 'owner-sub': ownerSub },
+          onProgress: ({ transferredBytes, totalBytes }) => {
+            if (totalBytes && mountedRef.current)
+              setUploadPct(Math.round((transferredBytes / totalBytes) * 100));
+          },
+        },
+      });
+
+      await task.result; // must await .result — uploadData returns a task object, not a Promise
+
+      const stages = PROC_STAGES[dest] || ['Upload file'];
+      setStageIdx(0);
+      setPhase(stages.length > 1 ? 'processing' : 'done');
+    } catch (err) {
+      if (mountedRef.current) {
+        setErrMsg(err.message || 'Upload failed');
+        setPhase('error');
+      }
+    }
+  }
+
+  function reset() {
+    setPending(null);
+    setPhase('idle');
+    setUploadPct(0);
+    setStageIdx(0);
+    setErrMsg('');
+  }
+
+  const cardBase = {
+    background: t.surface,
+    border: `1px solid ${t.border}`,
+    borderRadius: '16px',
+    padding: '32px',
+    textAlign: 'center',
+    boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+    marginBottom: '48px',
+  };
+  const btnPrimary = {
+    padding: '10px 24px', borderRadius: '8px', border: 'none',
+    background: t.accent, color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+  };
+  const btnSecondary = {
+    padding: '10px 24px', borderRadius: '8px', border: `1px solid ${t.border}`,
+    background: 'transparent', color: t.text, fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+  };
+
+  // ─── Confirm ─────────────────────────────────────────────────────────────────
+  if (phase === 'confirm') {
+    const { file, dest } = pending;
+    return (
+      <div style={cardBase}>
+        <div style={{ fontSize: '28px', marginBottom: '10px' }}>📤</div>
+        <h2 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: '700', color: t.text }}>
+          Upload this file?
+        </h2>
+        <div style={{
+          background: t.bg2, borderRadius: '10px', padding: '14px 16px',
+          marginBottom: '20px', textAlign: 'left',
+        }}>
+          <div style={{ fontWeight: '600', color: t.text, marginBottom: '6px', wordBreak: 'break-all' }}>
+            {file.name}
+          </div>
+          <div style={{ fontSize: '13px', color: t.muted, display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <span>{fmtBytes(file.size)}</span>
+            <span>Destination: {dest}</span>
+            <span>Tier: {storageTier === 'AUTO' ? 'Auto' : storageTier}</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button onClick={handleCancel} style={btnSecondary}>Cancel</button>
+          <button onClick={handleConfirm} style={btnPrimary}>Upload →</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Uploading ───────────────────────────────────────────────────────────────
+  if (phase === 'uploading') {
+    const { file, dest } = pending;
+    return (
+      <div style={cardBase}>
+        <div style={{ fontSize: '28px', marginBottom: '10px' }}>⬆</div>
+        <h2 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: '700', color: t.text }}>
+          Uploading to {dest}…
+        </h2>
+        <p style={{ margin: '0 0 16px', fontSize: '13px', color: t.muted, wordBreak: 'break-all' }}>
+          {file.name}
+        </p>
+        <div style={{
+          width: '100%', height: '8px', background: t.border,
+          borderRadius: '999px', overflow: 'hidden', marginBottom: '8px',
+        }}>
+          <div style={{
+            height: '100%', width: `${uploadPct}%`, background: t.accent,
+            borderRadius: '999px', transition: 'width 0.3s ease',
+          }} />
+        </div>
+        <div style={{ fontSize: '13px', color: t.muted }}>{uploadPct}%</div>
+      </div>
+    );
+  }
+
+  // ─── Processing ──────────────────────────────────────────────────────────────
+  if (phase === 'processing') {
+    const { dest } = pending;
+    const stages       = PROC_STAGES[dest] || ['Upload file'];
+    const isLastStage  = stageIdx === stages.length - 1;
+    return (
+      <div style={cardBase}>
+        <div style={{ fontSize: '28px', marginBottom: '10px' }}>⚙️</div>
+        <h2 style={{ margin: '0 0 20px', fontSize: '18px', fontWeight: '700', color: t.text }}>
+          Processing…
+        </h2>
+        <div style={{ marginBottom: '20px' }}>
+          <StageList stages={stages} activeIdx={stageIdx} />
+        </div>
+        {isLastStage && (
+          <p style={{ fontSize: '12px', color: t.muted, margin: '0 0 16px' }}>
+            Processing continues in the background. You can safely close this page.
+          </p>
+        )}
+        <button onClick={reset} style={btnPrimary}>Done</button>
+      </div>
+    );
+  }
+
+  // ─── Done ────────────────────────────────────────────────────────────────────
+  if (phase === 'done') {
+    return (
+      <div style={cardBase}>
+        <div style={{ fontSize: '32px', marginBottom: '10px', color: '#10b981' }}>✓</div>
+        <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: '#10b981' }}>
+          Upload complete
+        </h2>
+        <p style={{ margin: '0 0 20px', color: t.muted, fontSize: '14px', wordBreak: 'break-all' }}>
+          {pending.file.name} → {pending.dest}
+        </p>
+        <button onClick={reset} style={btnPrimary}>Upload another</button>
+      </div>
+    );
+  }
+
+  // ─── Error ───────────────────────────────────────────────────────────────────
+  if (phase === 'error') {
+    return (
+      <div style={cardBase}>
+        <div style={{ fontSize: '32px', marginBottom: '10px', color: '#ef4444' }}>✗</div>
+        <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: '#ef4444' }}>
+          Upload failed
+        </h2>
+        <p style={{ margin: '0 0 20px', color: t.muted, fontSize: '14px' }}>{errMsg}</p>
+        <button onClick={reset} style={btnPrimary}>Try again</button>
+      </div>
+    );
+  }
+
+  // ─── Idle ────────────────────────────────────────────────────────────────────
   return (
-    <div style={{
-      background: t.surface,
-      border: `1px solid ${t.border}`,
-      borderRadius: '16px',
-      padding: '32px',
-      textAlign: 'center',
-      boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-      marginBottom: '48px',
-    }}>
+    <div style={cardBase}>
       <div style={{ fontSize: '28px', marginBottom: '10px' }}>⬆</div>
       <h2 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: '700', color: t.text }}>
         Upload a file
@@ -138,12 +362,12 @@ function UploadCard() {
             value={storageTier}
             onChange={setStorageTier}
           />
-          {storageTier !== 'STANDARD' && storageMode !== 'raw' && (
+          {storageTier !== 'AUTO' && storageMode !== 'raw' && (
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: t.subtle }}>
               Applied to the original file. Thumbnails always use Standard.
             </p>
           )}
-          {storageTier !== 'STANDARD' && storageMode === 'raw' && (
+          {storageTier !== 'AUTO' && storageMode === 'raw' && (
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#f59e0b' }}>
               Tier selection only applies to processed files (photos & videos).
             </p>
@@ -158,24 +382,8 @@ function UploadCard() {
         fontWeight: '600', fontSize: '14px', cursor: 'pointer',
       }}>
         Choose file
-        <input type="file" onChange={handleUpload} style={{ display: 'none' }} />
+        <input ref={inputRef} type="file" onChange={handleFileSelect} style={{ display: 'none' }} />
       </label>
-
-      {status === 'uploading' && (
-        <p style={{ margin: '16px 0 0', color: t.accent, fontSize: '14px' }}>
-          Uploading to {dest}…
-        </p>
-      )}
-      {status === 'done' && (
-        <p style={{ margin: '16px 0 0', color: '#10b981', fontSize: '14px' }}>
-          ✓ Uploaded to {dest}
-        </p>
-      )}
-      {status === 'error' && (
-        <p style={{ margin: '16px 0 0', color: '#ef4444', fontSize: '14px' }}>
-          ✗ {errMsg}
-        </p>
-      )}
     </div>
   );
 }
