@@ -30,6 +30,7 @@ data "aws_iam_policy_document" "lambda_s3_dynamodb" {
       "s3:PutObject",
       "s3:DeleteObject",
       "s3:ListBucket",
+      "s3:PutObjectTagging",
     ]
     resources = [
       var.bucket_arn,
@@ -46,7 +47,12 @@ data "aws_iam_policy_document" "lambda_s3_dynamodb" {
       "dynamodb:Query",
       "dynamodb:Scan",
     ]
-    resources = [var.dynamodb_arn, var.video_dynamodb_arn]
+    resources = [
+      var.dynamodb_arn,
+      var.video_dynamodb_arn,
+      "${var.dynamodb_arn}/index/*",
+      "${var.video_dynamodb_arn}/index/*",
+    ]
   }
 
   # Athena permissions for whatsapp_api Lambda.
@@ -152,7 +158,8 @@ resource "aws_lambda_function" "photos_api" {
   handler          = "handler.handler"
   runtime          = "python3.12"
   source_code_hash = data.archive_file.photos_api.output_base64sha256
-  timeout          = 30
+  timeout          = 60
+  memory_size      = 256
 
   environment {
     variables = {
@@ -558,6 +565,48 @@ resource "aws_lambda_permission" "s3_invoke_whatsapp_bronze" {
   source_arn    = var.bucket_arn
 }
 
+# zip_extractor uses only stdlib zipfile + boto3 — no build step.
+data "archive_file" "zip_extractor" {
+  type        = "zip"
+  source_file = "${path.root}/lambdas/zip_extractor/handler.py"
+  output_path = "${path.root}/lambdas/zip_extractor/handler.zip"
+}
+
+resource "aws_lambda_function" "zip_extractor" {
+  filename         = data.archive_file.zip_extractor.output_path
+  function_name    = "${var.project_name}-zip-extractor-${var.environment}"
+  role             = aws_iam_role.lambda.arn
+  handler          = "handler.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.zip_extractor.output_base64sha256
+  timeout          = 300
+  memory_size      = 512
+
+  # Peak /tmp usage = zip_size + max_single_extracted_file (one at a time).
+  ephemeral_storage {
+    size = 3072
+  }
+
+  environment {
+    variables = {
+      BUCKET_NAME = var.bucket_id
+    }
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_lambda_permission" "s3_invoke_zip_extractor" {
+  statement_id  = "AllowS3InvokeZipExtractor"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.zip_extractor.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = var.bucket_arn
+}
+
 # --- API Gateway ---
 
 # The REST API is just a container — resources and methods are attached below.
@@ -711,6 +760,7 @@ resource "aws_s3_bucket_notification" "uploads" {
     aws_lambda_permission.s3_invoke_photo_processor,
     aws_lambda_permission.s3_invoke_video_processor,
     aws_lambda_permission.s3_invoke_whatsapp_bronze,
+    aws_lambda_permission.s3_invoke_zip_extractor,
   ]
 
   lambda_function {
@@ -730,5 +780,13 @@ resource "aws_s3_bucket_notification" "uploads" {
     events              = ["s3:ObjectCreated:*"]
     filter_prefix       = "raw-whatsapp-uploads/"
     filter_suffix       = ".txt"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.zip_extractor.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "raw-zips/"
+    # No suffix filter — Lambda validates internally; case-sensitive
+    # suffix filter would silently miss .ZIP (uppercase) files.
   }
 }
