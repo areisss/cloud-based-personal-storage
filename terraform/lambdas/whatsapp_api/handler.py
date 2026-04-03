@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import time
@@ -16,7 +17,24 @@ POLL_INTERVAL_SECONDS = 1
 MAX_WAIT_SECONDS      = 30
 
 
-def build_query(params):
+def get_caller_info(event):
+    """Decode the Cognito JWT from the Authorization header to get sub and groups."""
+    token = (event.get("headers") or {}).get("Authorization", "")
+    try:
+        # JWTs are three base64url segments separated by dots; the second is the payload.
+        payload = token.split(".")[1]
+        # Add padding so base64 decodes cleanly regardless of token length.
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.b64decode(payload))
+        return {
+            "sub":    claims.get("sub", ""),
+            "groups": claims.get("cognito:groups", []),
+        }
+    except Exception:
+        return {"sub": "", "groups": []}
+
+
+def build_query(params, caller):
     # Base query — always returns these columns sorted by date and time
     query = """
         SELECT date, time, sender, message, word_count
@@ -24,10 +42,15 @@ def build_query(params):
         WHERE 1=1
     """
 
+    # Scope results to the caller's identity:
+    # - demo users see only the curated demo rows
+    # - real users see only their own messages (matched by Cognito sub)
+    if "demo" in caller["groups"]:
+        query += " AND owner_sub = 'demo'"
+    else:
+        query += f" AND owner_sub = '{caller['sub']}'"
+
     # Each filter is appended only if the param was provided.
-    # Using string formatting here is safe because API Gateway's Cognito
-    # authorizer ensures only authenticated users reach this Lambda,
-    # and all values are parameterized with quotes.
     if params.get("date"):
         query += f" AND date = '{params['date']}'"
 
@@ -100,8 +123,9 @@ def handler(event, context):
     # API Gateway passes query string params under queryStringParameters.
     # It's None if no params were provided — default to empty dict.
     params = event.get("queryStringParameters") or {}
+    caller = get_caller_info(event)
 
-    sql = build_query(params)
+    sql = build_query(params, caller)
 
     try:
         query_id = run_query(sql)

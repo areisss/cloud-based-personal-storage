@@ -62,6 +62,17 @@ resource "aws_dynamodb_table" "photo_metadata" {
     type = "S"
   }
 
+  attribute {
+    name = "owner_sub"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "owner_sub-index"
+    hash_key        = "owner_sub"
+    projection_type = "ALL"
+  }
+
   tags = {
     Project     = var.project_name
     Environment = var.environment
@@ -76,6 +87,17 @@ resource "aws_dynamodb_table" "video_metadata" {
   attribute {
     name = "video_id"
     type = "S"
+  }
+
+  attribute {
+    name = "owner_sub"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "owner_sub-index"
+    hash_key        = "owner_sub"
+    projection_type = "ALL"
   }
 
   tags = {

@@ -31,6 +31,7 @@ data "aws_iam_policy_document" "lambda_s3_dynamodb" {
       "s3:DeleteObject",
       "s3:ListBucket",
       "s3:PutObjectTagging",
+      "s3:GetBucketLocation",
     ]
     resources = [
       var.bucket_arn,
@@ -269,7 +270,8 @@ resource "aws_lambda_function" "videos_api" {
   handler          = "handler.handler"
   runtime          = "python3.12"
   source_code_hash = data.archive_file.videos_api.output_base64sha256
-  timeout          = 30
+  timeout          = 60
+  memory_size      = 256
 
   environment {
     variables = {
@@ -316,6 +318,24 @@ resource "aws_api_gateway_integration" "videos_get" {
   uri                     = aws_lambda_function.videos_api.invoke_arn
 }
 
+# PATCH /videos — rename group titles
+resource "aws_api_gateway_method" "videos_patch" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.videos.id
+  http_method   = "PATCH"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "videos_patch" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.videos.id
+  http_method             = aws_api_gateway_method.videos_patch.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.videos_api.invoke_arn
+}
+
 resource "aws_api_gateway_method" "videos_options" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.videos.id
@@ -352,7 +372,7 @@ resource "aws_api_gateway_integration_response" "videos_options" {
   status_code = "200"
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,PATCH,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
   depends_on = [aws_api_gateway_integration.videos_options]
@@ -363,6 +383,7 @@ resource "aws_api_gateway_deployment" "videos" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   depends_on = [
     aws_api_gateway_integration.videos_get,
+    aws_api_gateway_integration.videos_patch,
     aws_api_gateway_integration_response.videos_options,
   ]
   lifecycle {
@@ -528,6 +549,104 @@ resource "aws_api_gateway_method_settings" "chats_throttle" {
   }
 }
 
+# --- /zip-contents resource ---
+
+resource "aws_api_gateway_resource" "zip_contents" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "zip-contents"
+}
+
+resource "aws_api_gateway_method" "zip_contents_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.zip_contents.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "zip_contents_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.zip_contents.id
+  http_method             = aws_api_gateway_method.zip_contents_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.zip_preview_api.invoke_arn
+}
+
+resource "aws_api_gateway_method" "zip_contents_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.zip_contents.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "zip_contents_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.zip_contents.id
+  http_method = aws_api_gateway_method.zip_contents_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "zip_contents_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.zip_contents.id
+  http_method = aws_api_gateway_method.zip_contents_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "zip_contents_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.zip_contents.id
+  http_method = aws_api_gateway_method.zip_contents_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.zip_contents_options]
+}
+
+resource "aws_api_gateway_deployment" "zip_contents" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  depends_on = [
+    aws_api_gateway_integration.zip_contents_get,
+    aws_api_gateway_integration_response.zip_contents_options,
+  ]
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_api_gateway_stage" "zip_contents" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  deployment_id = aws_api_gateway_deployment.zip_contents.id
+  stage_name    = "${var.environment}-zip-contents"
+}
+
+resource "aws_api_gateway_method_settings" "zip_contents_throttle" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.zip_contents.stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_rate_limit  = 10
+    throttling_burst_limit = 20
+    logging_level          = "OFF"
+    metrics_enabled        = false
+    data_trace_enabled     = false
+  }
+}
+
 # --- WhatsApp Bronze Lambda ---
 
 data "archive_file" "whatsapp_bronze" {
@@ -607,6 +726,49 @@ resource "aws_lambda_permission" "s3_invoke_zip_extractor" {
   source_arn    = var.bucket_arn
 }
 
+# --- ZIP Preview API Lambda ---
+
+data "archive_file" "zip_preview_api" {
+  type        = "zip"
+  source_file = "${path.root}/lambdas/zip_preview_api/handler.py"
+  output_path = "${path.root}/lambdas/zip_preview_api/handler.zip"
+}
+
+resource "aws_lambda_function" "zip_preview_api" {
+  filename         = data.archive_file.zip_preview_api.output_path
+  function_name    = "${var.project_name}-zip-preview-api-${var.environment}"
+  role             = aws_iam_role.lambda.arn
+  handler          = "handler.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.zip_preview_api.output_base64sha256
+  timeout          = 30
+  memory_size      = 512
+
+  environment {
+    variables = {
+      BUCKET_NAME = var.bucket_id
+    }
+  }
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_cloudwatch_log_group" "zip_preview_api" {
+  name              = "/aws/lambda/${aws_lambda_function.zip_preview_api.function_name}"
+  retention_in_days = 1
+}
+
+resource "aws_lambda_permission" "apigw_invoke_zip_preview_api" {
+  statement_id  = "AllowAPIGatewayInvokeZipPreviewApi"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.zip_preview_api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
 # --- API Gateway ---
 
 # The REST API is just a container — resources and methods are attached below.
@@ -649,7 +811,25 @@ resource "aws_api_gateway_integration" "photos_get" {
   rest_api_id             = aws_api_gateway_rest_api.main.id
   resource_id             = aws_api_gateway_resource.photos.id
   http_method             = aws_api_gateway_method.photos_get.http_method
-  integration_http_method = "POST"  # Lambda integrations always use POST internally
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.photos_api.invoke_arn
+}
+
+# PATCH /photos — rename group titles
+resource "aws_api_gateway_method" "photos_patch" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.photos.id
+  http_method   = "PATCH"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "photos_patch" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.photos.id
+  http_method             = aws_api_gateway_method.photos_patch.http_method
+  integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.photos_api.invoke_arn
 }
@@ -695,7 +875,7 @@ resource "aws_api_gateway_integration_response" "photos_options" {
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,PATCH,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 
@@ -718,6 +898,7 @@ resource "aws_api_gateway_deployment" "main" {
 
   depends_on = [
     aws_api_gateway_integration.photos_get,
+    aws_api_gateway_integration.photos_patch,
     aws_api_gateway_integration_response.photos_options,
   ]
 
@@ -754,6 +935,45 @@ resource "aws_api_gateway_method_settings" "photos_throttle" {
 # depends_on is required: the permission above must exist before S3 will accept the notification config.
 # Both S3 triggers must live in a single aws_s3_bucket_notification resource —
 # S3 only allows one notification configuration per bucket.
+# --- CloudWatch Log Groups ---
+# Explicitly managed so we can enforce retention. Lambda would otherwise
+# auto-create these with infinite retention on first invocation.
+
+resource "aws_cloudwatch_log_group" "photo_processor" {
+  name              = "/aws/lambda/${aws_lambda_function.photo_processor.function_name}"
+  retention_in_days = 1
+}
+
+resource "aws_cloudwatch_log_group" "photos_api" {
+  name              = "/aws/lambda/${aws_lambda_function.photos_api.function_name}"
+  retention_in_days = 1
+}
+
+resource "aws_cloudwatch_log_group" "video_processor" {
+  name              = "/aws/lambda/${aws_lambda_function.video_processor.function_name}"
+  retention_in_days = 1
+}
+
+resource "aws_cloudwatch_log_group" "videos_api" {
+  name              = "/aws/lambda/${aws_lambda_function.videos_api.function_name}"
+  retention_in_days = 1
+}
+
+resource "aws_cloudwatch_log_group" "whatsapp_api" {
+  name              = "/aws/lambda/${aws_lambda_function.whatsapp_api.function_name}"
+  retention_in_days = 1
+}
+
+resource "aws_cloudwatch_log_group" "whatsapp_bronze" {
+  name              = "/aws/lambda/${aws_lambda_function.whatsapp_bronze.function_name}"
+  retention_in_days = 1
+}
+
+resource "aws_cloudwatch_log_group" "zip_extractor" {
+  name              = "/aws/lambda/${aws_lambda_function.zip_extractor.function_name}"
+  retention_in_days = 1
+}
+
 resource "aws_s3_bucket_notification" "uploads" {
   bucket = var.bucket_id
   depends_on = [

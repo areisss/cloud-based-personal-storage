@@ -12,7 +12,10 @@ A full-stack personal cloud storage system built on AWS, with automated media pr
 - **Photos** — Upload JPEGs, PNGs, or WebPs. A Lambda function generates thumbnails using Pillow and stores metadata (filename, upload date, tags) in DynamoDB. Browse a responsive grid with one-click downloads.
 - **Videos** — Upload MP4, MOV, AVI, MKV, or WebM files. A Lambda function extracts a thumbnail frame and duration using FFmpeg, then stores metadata in DynamoDB. Browse videos grouped by upload date.
 - **WhatsApp Archive** — Upload a WhatsApp `.txt` export. A Lambda parses each message and stores sender, date, time, and body in DynamoDB. Search by sender, date, or keyword via a REST API.
-- **Other Files** — ZIP archives and miscellaneous files stored as-is in S3, browsable from the UI.
+- **Other Files** — ZIP archives and miscellaneous files stored in S3. Files are grouped in a collapsible tree by source ZIP, month, and file type (photos, videos, audio, documents) for easy navigation.
+- **ZIP Preview** — Browse contents of uploaded ZIP files without downloading. Expandable tree shows files grouped by month and type with sizes.
+- **Editable Group Titles** — Rename photo/video groups inline (e.g., change "2026 · Unknown location" to "Beach Trip"). Persisted to DynamoDB via PATCH API.
+- **Source ZIP Tracking** — Files extracted from ZIPs carry a `source_zip` metadata tag, showing which archive they originated from.
 - **Storage Tiers** — Choose Standard, Standard-IA, or Glacier Instant Retrieval per upload. Applied to the original file; thumbnails always stay in Standard.
 - **Dark Mode** — Full light/dark theme toggle, persisted to localStorage.
 - **Demo Mode** — A read-only Cognito user (`demo@example.com`) is provisioned by Terraform so visitors can browse without creating an account.
@@ -33,9 +36,10 @@ Browser (React + AWS Amplify)
     │                                     ──► whatsapp_bronze Lambda  (message parser)
     │
     └─── API Gateway (Cognito authorizer)
-             ├─ /photos    → photos_api Lambda   → DynamoDB PhotoMetadata
-             ├─ /videos    → videos_api Lambda   → DynamoDB VideoMetadata
-             └─ /chats     → whatsapp_api Lambda → DynamoDB WhatsAppMessages
+             ├─ GET|PATCH /photos       → photos_api Lambda       → DynamoDB PhotoMetadata
+             ├─ GET|PATCH /videos       → videos_api Lambda       → DynamoDB VideoMetadata
+             ├─ GET /chats              → whatsapp_api Lambda     → DynamoDB WhatsAppMessages
+             └─ GET /zip-contents       → zip_preview_api Lambda  → S3 (read ZIP central directory)
 ```
 
 **Infrastructure is fully managed by Terraform** (no ClickOps). The frontend is bootstrapped with AWS Amplify CLI for Auth/Storage, then Terraform manages everything else.
@@ -46,7 +50,7 @@ Browser (React + AWS Amplify)
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, AWS Amplify JS v6, React Router v6 |
+| Frontend | React 19, AWS Amplify JS v6, React Router v7 |
 | Auth | Amazon Cognito (User Pool + Identity Pool) |
 | Storage | Amazon S3 (multi-tier: Standard / Standard-IA / Glacier IR) |
 | Compute | AWS Lambda (Python 3.12) |
@@ -78,12 +82,14 @@ Browser (React + AWS Amplify)
     │   ├── compute/         # API Gateway, Lambda functions, IAM roles
     │   └── analytics/       # Glue database + Athena workgroup
     └── lambdas/
-        ├── photo_processor/ # Pillow thumbnail generation
-        ├── video_processor/ # FFmpeg thumbnail + duration extraction
-        ├── photos_api/      # GET /photos — list with pre-signed URLs
-        ├── videos_api/      # GET /videos — list with pre-signed URLs
-        ├── whatsapp_api/    # GET /chats  — filter by date/sender/search
-        └── whatsapp_bronze/ # Parse WhatsApp .txt exports → DynamoDB
+        ├── photo_processor/  # Pillow thumbnail generation + EXIF/GPS extraction
+        ├── video_processor/  # FFmpeg thumbnail + duration extraction
+        ├── photos_api/       # GET|PATCH /photos — groups, pagination, rename
+        ├── videos_api/       # GET|PATCH /videos — groups, pagination, rename
+        ├── whatsapp_api/     # GET /chats — Athena-powered full-text search
+        ├── whatsapp_bronze/  # Parse WhatsApp .txt exports → DynamoDB
+        ├── zip_extractor/    # S3 trigger — extract ZIP contents, track source
+        └── zip_preview_api/  # GET /zip-contents — browse ZIP without downloading
 ```
 
 ---
@@ -110,6 +116,7 @@ The `.env` file needs:
 REACT_APP_PHOTOS_API_URL=https://<your-api>.execute-api.us-east-1.amazonaws.com/dev/photos
 REACT_APP_VIDEOS_API_URL=https://<your-api>.execute-api.us-east-1.amazonaws.com/dev/videos
 REACT_APP_CHATS_API_URL=https://<your-api>.execute-api.us-east-1.amazonaws.com/dev/chats
+REACT_APP_ZIP_PREVIEW_API_URL=https://<your-api>.execute-api.us-east-1.amazonaws.com/dev-zip-contents/zip-contents
 ```
 
 ### Infrastructure

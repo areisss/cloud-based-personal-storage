@@ -26,6 +26,91 @@ data "aws_s3_bucket" "main" {
   bucket = "areis-amplify-frontend-storaged4873-dev"
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "main" {
+  bucket = data.aws_s3_bucket.main.id
+
+  rule {
+    id     = "photo-originals-auto-tier"
+    status = "Enabled"
+
+    filter {
+      and {
+        prefix = "photos/originals/"
+        tags   = { auto-tier = "true" }
+      }
+    }
+
+    transition {
+      days          = 1
+      storage_class = "GLACIER_IR"
+    }
+  }
+
+  rule {
+    id     = "video-originals-auto-tier"
+    status = "Enabled"
+
+    filter {
+      and {
+        prefix = "videos/originals/"
+        tags   = { auto-tier = "true" }
+      }
+    }
+
+    transition {
+      days          = 1
+      storage_class = "GLACIER_IR"
+    }
+  }
+
+  # Athena writes a result file for every query; delete them after 1 day.
+  rule {
+    id     = "athena-results-cleanup"
+    status = "Enabled"
+
+    filter {
+      prefix = "athena-results/"
+    }
+
+    expiration {
+      days = 1
+    }
+  }
+}
+
+# ── CloudWatch log group retention ──────────────────────────────────────────
+# Lambda auto-creates log groups with infinite retention; we bring them under
+# Terraform management here so we can enforce a 1-day retention policy.
+
+import {
+  to = module.compute.aws_cloudwatch_log_group.photo_processor
+  id = "/aws/lambda/cloud-personal-storage-photo-processor-dev"
+}
+import {
+  to = module.compute.aws_cloudwatch_log_group.photos_api
+  id = "/aws/lambda/cloud-personal-storage-photos-api-dev"
+}
+import {
+  to = module.compute.aws_cloudwatch_log_group.video_processor
+  id = "/aws/lambda/cloud-personal-storage-video-processor-dev"
+}
+import {
+  to = module.compute.aws_cloudwatch_log_group.videos_api
+  id = "/aws/lambda/cloud-personal-storage-videos-api-dev"
+}
+import {
+  to = module.compute.aws_cloudwatch_log_group.whatsapp_api
+  id = "/aws/lambda/cloud-personal-storage-whatsapp-api-dev"
+}
+import {
+  to = module.compute.aws_cloudwatch_log_group.whatsapp_bronze
+  id = "/aws/lambda/cloud-personal-storage-whatsapp-bronze-dev"
+}
+import {
+  to = module.compute.aws_cloudwatch_log_group.zip_extractor
+  id = "/aws/lambda/cloud-personal-storage-zip-extractor-dev"
+}
+
 # Creates the DynamoDB PhotoMetadata table
 module "storage" {
   source       = "./modules/storage"

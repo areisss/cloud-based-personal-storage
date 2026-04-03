@@ -59,11 +59,11 @@ resource "aws_glue_catalog_database" "main" {
 resource "aws_glue_job" "whatsapp_silver" {
   name         = "${var.project_name}-whatsapp-silver-${var.environment}"
   role_arn     = aws_iam_role.glue.arn
-  glue_version = "3.0"
+  glue_version = "2.0"
 
   command {
     name            = "pythonshell"
-    python_version  = "3"
+    python_version  = "3.9"
     script_location = "s3://${var.bucket_name}/glue-scripts/whatsapp_silver.py"
   }
 

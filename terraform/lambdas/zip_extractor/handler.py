@@ -54,6 +54,7 @@ def process_zip(source_key):
     inherited_metadata = {
         "owner-sub":    head.get("Metadata", {}).get("owner-sub", "unknown"),
         "storage-tier": head.get("Metadata", {}).get("storage-tier", "AUTO"),
+        "source-zip":   filename,
     }
 
     try:

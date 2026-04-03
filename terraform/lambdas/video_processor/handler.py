@@ -21,7 +21,7 @@ FFPROBE = "/var/task/bin/ffprobe"
 
 THUMBNAIL_MAX_PX = 480
 
-# Storage classes the user may request. Anything else falls back to STANDARD.
+# Storage classes the user may explicitly request.
 VALID_STORAGE_CLASSES = {"STANDARD", "STANDARD_IA", "GLACIER_IR"}
 
 CONTENT_TYPES = {
@@ -41,12 +41,12 @@ def handler(event, context):
 
 
 def probe_video(path):
-    """Return (duration_seconds, width, height) for the first video stream."""
+    """Return (duration_seconds, width, height, date_taken) for the video."""
     result = subprocess.run(
         [
             FFPROBE, "-v", "quiet",
             "-print_format", "json",
-            "-show_streams", "-select_streams", "v:0",
+            "-show_streams", "-show_format", "-select_streams", "v:0",
             path,
         ],
         capture_output=True, text=True, check=True,
@@ -56,7 +56,18 @@ def probe_video(path):
     duration = float(stream.get("duration") or 0)
     width    = int(stream.get("width",  0))
     height   = int(stream.get("height", 0))
-    return duration, width, height
+
+    # Extract creation_time from format-level tags (set by camera apps).
+    tags = data.get("format", {}).get("tags", {})
+    raw_ct = tags.get("creation_time")  # e.g. "2024-01-15T14:30:00.000000Z"
+    date_taken = None
+    if raw_ct:
+        try:
+            date_taken = datetime.fromisoformat(raw_ct.replace("Z", "+00:00")).isoformat()
+        except Exception:
+            pass
+
+    return duration, width, height, date_taken
 
 
 def extract_thumbnail(video_path, out_path, duration):
@@ -85,29 +96,43 @@ def process_video(source_key, filename):
     tmp_thumb = f"/tmp/{stem}.jpg"
 
     try:
-        # Read the storage tier chosen by the user at upload time before downloading.
+        # Read the storage tier and owner chosen by the user at upload time before downloading.
         head      = s3.head_object(Bucket=BUCKET, Key=source_key)
         metadata  = head.get("Metadata", {})
-        raw_tier  = metadata.get("storage-tier", "STANDARD").upper()
-        storage_class = raw_tier if raw_tier in VALID_STORAGE_CLASSES else "STANDARD"
+        raw_tier = metadata.get("storage-tier", "AUTO").upper()
+        if raw_tier in ("STANDARD_IA", "GLACIER_IR"):
+            storage_class = raw_tier
+            auto_tier = False
+        elif raw_tier == "STANDARD":
+            storage_class = "STANDARD"
+            auto_tier = False
+        else:  # AUTO or unknown → default behaviour
+            storage_class = "STANDARD"
+            auto_tier = True
+        owner_sub  = metadata.get("owner-sub", "unknown")
+        source_zip = metadata.get("source-zip")
 
         # Download the video to Lambda's ephemeral /tmp storage.
         s3.download_file(BUCKET, source_key, tmp_video)
         size_bytes = os.path.getsize(tmp_video)
 
-        duration, width, height = probe_video(tmp_video)
+        duration, width, height, date_taken = probe_video(tmp_video)
         extract_thumbnail(tmp_video, tmp_thumb, duration)
 
         # Copy the original within S3 — avoids re-uploading a potentially large file.
         # StorageClass is applied to the original only; the thumbnail stays STANDARD
         # because it is loaded on every gallery page open.
         original_key = f"videos/originals/{filename}"
-        s3.copy_object(
-            Bucket=BUCKET,
-            CopySource={"Bucket": BUCKET, "Key": source_key},
-            Key=original_key,
-            StorageClass=storage_class,
-        )
+        copy_kwargs = {
+            "Bucket": BUCKET,
+            "CopySource": {"Bucket": BUCKET, "Key": source_key},
+            "Key": original_key,
+            "StorageClass": storage_class,
+        }
+        if auto_tier:
+            copy_kwargs["Tagging"] = "auto-tier=true"
+            copy_kwargs["TaggingDirective"] = "REPLACE"
+        s3.copy_object(**copy_kwargs)
 
         # Upload thumbnail.
         thumbnail_key = f"videos/thumbnails/{stem}.jpg"
@@ -118,7 +143,7 @@ def process_video(source_key, filename):
             )
 
         ext = filename.rsplit(".", 1)[-1].lower()
-        dynamodb.Table(TABLE).put_item(Item={
+        item = {
             "video_id":         str(uuid.uuid4()),
             "filename":         filename,
             "original_key":     original_key,
@@ -131,8 +156,15 @@ def process_video(source_key, filename):
             "size_bytes":       size_bytes,
             "content_type":     CONTENT_TYPES.get(ext, "video/mp4"),
             "storage_class":    storage_class,
+            "owner_sub":        owner_sub,
+            "visibility":       "private",
             "uploaded_at":      datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        if date_taken:
+            item["date_taken"] = date_taken
+        if source_zip:
+            item["source_zip"] = source_zip
+        dynamodb.Table(TABLE).put_item(Item=item)
 
     finally:
         # Always clean up /tmp regardless of success or failure.
